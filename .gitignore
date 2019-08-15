@@ -1,0 +1,14 @@
+/node_modules
+solutions/*.json
+package-lock.json
+combined.log.json
+
+.vscode
+tmp.*
+*.swp
+build
+wasm-client/contracts.json
+wasm-client/private.json
+scripts/supersecret.txt
+scrypt-data/stuff
+.nyc_output

@@ -1,0 +1,12 @@
+{
+  "name": "truebit-template",
+  "version": "1.0.0",
+  "description": "Client software for interacting with the Truebit system",
+  "main": "sim.js",
+  "author": "mrsmkl",
+  "license": "ISC",
+  "dependencies": {
+    "big-integer": "^1.6.42",
+    "minimist": "^1.2.0"
+  }
+}
