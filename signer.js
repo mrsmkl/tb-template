@@ -23,12 +23,16 @@ function main() {
         config.signers = []
         config.blocks = {}
         config.number = 0
-        /*
         if (config.private) {
             let privateKey = Buffer.from(config.private, "hex")
             let pubKey = ecdsa.publicKeyCreate(privateKey, true)
             config.signers.push(pubKey.toString("hex"))
-        }*/
+        }
+    }
+    else if (argv["clear-sigs"]) {
+        let header = JSON.parse(fs.readFileSync(argv["sign"]))
+        header.sigs = []
+        fs.writeFileSync(argv["clear-sigs"], JSON.stringify(header))
     }
     else if (argv["sign"]) {
         let privateKey = Buffer.from(config.private, "hex")
@@ -66,10 +70,15 @@ function main() {
         let buf = Buffer.from(header.data)
         console.log("signing", buf.toString())
         let sig = ecdsa.sign(buf, privateKey)
-        console.log(JSON.stringify({sig:sig.signature.toString("hex"), recovery:sig.recovery, data:buf.toString(), number:header.number}))
+        let obj = {sig:sig.signature.toString("hex"), recovery:sig.recovery, data:buf.toString(), number:header.number}
+        console.log(JSON.stringify(obj))
+
+        header.sigs = header.sigs || []
+        header.sigs.push(obj)
 
         block.active = data
         block.accepted.push(data)
+        fs.writeFileSync(argv["sign"], JSON.stringify(header))
     }
     else if (argv["reject"]) {
         let privateKey = Buffer.from(config.private, "hex")
@@ -106,6 +115,47 @@ function main() {
         let sig = ecdsa.sign(buf, privateKey)
         console.log(JSON.stringify({sig:sig.signature.toString("hex"), recovery:sig.recovery, data:buf.toString(), number:header.number}))
         block.rejected.push(data)
+    }
+    else if (argv["deactivate"]) {
+        let header = JSON.parse(fs.readFileSync(argv["deactivate"]))
+        config.blocks = config.blocks || {}
+        config.number = config.number || 0
+        config.messages = config.messages || []
+        if (config.number != header.number) {
+            console.error("block number is wrong")
+            return
+        }
+        let block = config.blocks[header.number] || {}
+        config.blocks[header.number] = block
+        config.messages.push(header)
+        if (header.data[0] != 'r') {
+            console.log("not a rejection message")
+            return
+        }
+        let data = header.data.substr(10)
+        if (block.active != data) {
+            console.error("no active block, recording message")
+        }
+        else {
+            // recover pubkey
+            let pubkey = ecdsa.recover(Buffer.from(header.data), Buffer.from(header.sig, "hex"), header.recovery, true).toString("hex")
+            console.log("pubkey", pubkey, "withdrawing message")
+            block.active = null
+        }
+    }
+    // move on to the next block
+    else if (argv["next"]) {
+        let header = JSON.parse(fs.readFileSync(argv["next"]))
+        config.number = config.number || 0
+        // check all signatures
+        function getsig(msg) {
+            return ecdsa.recover(Buffer.from(header.data), Buffer.from(msg.sig, "hex"), msg.recovery, true).toString("hex")
+        }
+        if (JSON.stringify(config.signers.sort()) == JSON.stringify(header.sigs.map(getsig).sort())) {
+            console.log("block accepted")
+            config.messages.push(header)
+            config.number++
+        }
     }
     fs.writeFileSync("config.json", JSON.stringify(config))
 }
