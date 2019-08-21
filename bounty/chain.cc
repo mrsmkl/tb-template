@@ -26,6 +26,7 @@ struct Pending {
 };
 
 std::map<u256, u256> balances;
+std::map<u256, bool> signers;
 std::map<u256, u256> nonces;
 std::map<u256, u256> block_hash;
 std::map<u256, Pending> pending;
@@ -33,7 +34,6 @@ std::map<u256, Pending> pending;
 u256 block_number;
 
 // well there are two modes, one is for transaction files, not all commands are allowed there
-
 
 u256 hashFile() {
     FILE *f = openFile("state.data", "rb");
@@ -104,7 +104,7 @@ void process(FILE *f, u256 hash, bool restricted, bool &eof) {
     }
     if (restricted) return;
     // Block hash
-    else if (control == 3) {
+    if (control == 3) {
         u256 num = get_bytes32(f);
         u256 hsh = get_bytes32(f);
         std::cout << "Parent block " << num << " hash " << hsh << std::endl;
@@ -127,6 +127,16 @@ void process(FILE *f, u256 hash, bool restricted, bool &eof) {
         u256 value = get_bytes32(f);
         u256 block = get_bytes32(f);
         pending[from] = Pending(to, value, block);
+    }
+    // Add signer
+    else if (control == 6) {
+        u256 addr = get_bytes32(f);
+        signers[addr] = true;
+    }
+    // Remove signer
+    else if (control == 7) {
+        u256 addr = get_bytes32(f);
+        signers[addr] = false;
     }
 }
 
@@ -168,6 +178,12 @@ void finalize() {
         put_bytes32(f, x.second.value);
         put_bytes32(f, x.second.block);
     }
+    // output signers
+    for (auto const& x : signers) {
+        if (!x.second) continue;
+        put_bytes32(f, 6);
+        put_bytes32(f, x.first);
+    }
     fclose(f);
 }
 
@@ -204,28 +220,33 @@ std::vector<uint8_t> secretToPublic(u256 secret) {
     return serializedPubkey;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     char opt = '0';
-    if (argc > 1) opt = argv[1][0];
-    switch (opt) {
-        case '0':
-            {
+    if (argc > 1)
+        opt = argv[1][0];
+    switch (opt)
+    {
+    case '0':
+    {
         std::cout << "Hashing file" << std::endl;
-            u256 hash = hashFile();
+        u256 hash = hashFile();
         block_hash[0] = hash;
         std::cout << "Hash " << hash << std::endl;
-            processFile("state.data", hash, false);
-            processFile("control.data", hash, false);
-            processFile("input.data", hash, true);
-            finalize();
-            outputBalances();
-            break;
+        processFile("state.data", hash, false);
+        processFile("control.data", hash, false);
+        processFile("input.data", hash, true);
+        finalize();
+        outputBalances();
+        break;
     }
-        case 'g': {
+    case 'g':
+    {
         srand(time(NULL));
         std::cout << "Generating secret key (not really secure)" << std::endl;
         std::vector<uint8_t> v(32, 0);
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < 32; i++)
+        {
             v[i] = rand() & 0xff;
         }
         u256 secret = fromBigEndian(v);
@@ -236,31 +257,32 @@ int main(int argc, char **argv) {
         std::cout << "Wrote secret to secret.data" << std::endl;
         break;
     }
-        case 't': {
+    case 't':
+    {
         std::cout << "Generating a transaction" << std::endl;
         FILE *f = openFile("secret.data", "rb");
         u256 secret = get_bytes32(f);
         fclose(f);
-        
+
         std::cout << "Got secret key " << secret << std::endl;
-        
+
         std::vector<uint8_t> pub = secretToPublic(secret);
-        
-        u256 x = fromBigEndian(pub.begin()+1, pub.begin()+33);
-        u256 y = fromBigEndian(pub.begin()+33, pub.end());
-        
+
+        u256 x = fromBigEndian(pub.begin() + 1, pub.begin() + 33);
+        u256 y = fromBigEndian(pub.begin() + 33, pub.end());
+
         u256 from = publicToAddress(pub);
-        
+
         std::cout << "X: " << x << " Y: " << y << std::endl;
         std::cout << "Address: " << from << std::endl;
-        
+
         u256 to = 1234567890;
         u256 value = 333444;
         u256 nonce = 0;
 
         u256 hash = keccak256(to, value, nonce);
         std::cout << "Message hash: " << hash << std::endl;
-        
+
         Signature sig = sign(secret, hash);
 
         f = openFile("input.data", "wb");
@@ -269,31 +291,32 @@ int main(int argc, char **argv) {
         put_bytes32(f, to);
         put_bytes32(f, value);
         put_bytes32(f, nonce);
-        
+
         put_bytes32(f, sig.r);
         put_bytes32(f, sig.s);
         put_bytes32(f, sig.v);
         fclose(f);
-        
+
         break;
     }
-        case 'b': {
+    case 'b':
+    {
         std::cout << "Adding balance" << std::endl;
         FILE *f = openFile("secret.data", "rb");
         u256 secret = get_bytes32(f);
         fclose(f);
-        
+
         std::cout << "Got secret key " << secret << std::endl;
-        
+
         std::vector<uint8_t> pub = secretToPublic(secret);
-        
-        u256 x = fromBigEndian(pub.begin()+1, pub.begin()+33);
-        u256 y = fromBigEndian(pub.begin()+33, pub.end());
-        
+
+        u256 x = fromBigEndian(pub.begin() + 1, pub.begin() + 33);
+        u256 y = fromBigEndian(pub.begin() + 33, pub.end());
+
         u256 from = publicToAddress(pub);
         u256 value = 1000000;
         u256 nonce = 0;
-        
+
         std::cout << "X: " << x << " Y: " << y << std::endl;
         std::cout << "Address: " << from << std::endl;
 
@@ -304,36 +327,36 @@ int main(int argc, char **argv) {
         put_bytes32(f, nonce);
 
         fclose(f);
-        
-        
+
         break;
     }
-        case 'c': {
+    case 'c':
+    {
         std::cout << "Confirming block" << std::endl;
         FILE *f = openFile("secret.data", "rb");
         u256 secret = get_bytes32(f);
         fclose(f);
-        
+
         std::cout << "Got secret key " << secret << std::endl;
-        
+
         std::vector<uint8_t> pub = secretToPublic(secret);
-        
-        u256 x = fromBigEndian(pub.begin()+1, pub.begin()+33);
-        u256 y = fromBigEndian(pub.begin()+33, pub.end());
-        
+
+        u256 x = fromBigEndian(pub.begin() + 1, pub.begin() + 33);
+        u256 y = fromBigEndian(pub.begin() + 33, pub.end());
+
         u256 from = publicToAddress(pub);
-        
+
         std::cout << "X: " << hex(x) << " Y: " << hex(y) << std::endl;
         std::cout << "Address: " << hex(from) << std::endl;
-        
+
         u256 hash = hashFile();
         block_hash[0] = hash;
         std::cout << "Hash " << hash << std::endl;
         processFile("state.data", hash, false);
-        
+
         std::cout << "Block number " << block_number << " with hash " << hex(block_hash[block_number]) << std::endl;
         std::cout << "Message hash: " << hash << std::endl;
-        
+
         Signature sig = sign(secret, hash);
 
         f = openFile("input.data", "wb");
@@ -346,17 +369,17 @@ int main(int argc, char **argv) {
         put_bytes32(f, sig.s);
         put_bytes32(f, sig.v);
         fclose(f);
-        
+
         break;
     }
-        case 'h': {
+    case 'h':
+    {
         // std::cout << block_hash[23] << std::endl;
-            std::cout << "Truebit Plasma task. Options: " << std::endl;
-            std::cout << "0: perform the task" << std::endl;
-            std::cout << "h: print help" << std::endl;
-            break;
+        std::cout << "Truebit Plasma task. Options: " << std::endl;
+        std::cout << "0: perform the task" << std::endl;
+        std::cout << "h: print help" << std::endl;
+        break;
     }
     }
     return 0;
 }
-
