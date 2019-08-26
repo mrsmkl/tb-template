@@ -17,6 +17,7 @@ contract App {
         uint number;
         uint bn;
         address owner;
+        bytes32 data;
     }
 
     mapping (bytes32 => Proposition) propositions;
@@ -26,11 +27,11 @@ contract App {
     function bondDeposit(address a, uint amount) private;
     function unbondDeposit(address a, uint amount) private;
 
-    function proposeHeader(uint number, bytes32 header) public {
+    function proposeHeader(uint number, bytes32 header, bytes32 data) public {
         require(isOperator(msg.sender), "only operator can add headers");
         require(number > last_header, "state already deprecated");
         bondDeposit(msg.sender, 1 ether);
-        propositions[header] = Proposition(number, block.number, msg.sender);
+        propositions[header] = Proposition(number, block.number, msg.sender, data);
         emit Proposed(msg.sender, number, header);
     }
 
@@ -53,6 +54,7 @@ contract App {
         uint disagree;
         uint bn;
         uint step;
+        bytes32 data;
     }
 
     mapping (bytes32 => Challenge) challenges;
@@ -62,17 +64,18 @@ contract App {
         bytes32 id = keccak256(abi.encodePacked(header, uniq));
         uniq++;
         bondDeposit(msg.sender, 1 ether);
-        challenges[id] = Challenge(header, p.owner, msg.sender, last_header, p.number, block.number, 0);
+        challenges[id] = Challenge(header, p.owner, msg.sender, last_header, p.number, block.number, 0, p.data);
         delete propositions[header];
     }
 
-    function post(bytes32 id, bytes32 header) public {
+    function post(bytes32 id, bytes32 header, bytes32 data) public {
         Challenge storage c = challenges[id];
         require(int(c.disagree) - int(c.agree) > 1, "already found the disagreement");
         require(c.step % 2 == 0, "prover's turn");
         require(msg.sender == c.prover, "only prover can answer");
         // post middle state
         c.header = header;
+        c.data = data;
         c.step++;
         c.bn = block.number;
     }
@@ -99,7 +102,7 @@ contract App {
         require(c.disagree == c.agree + 1, "already found the disagreement");
         require(c.step % 2 == 1, "verifiers's turn");
         require(msg.sender == c.other, "only verifier can answer");
-        require(invalidHeader(c.header), "header has not been found invalid");
+        require(invalidHeader(c.header, c.data), "header has not been found invalid");
         unbondDeposit(c.other, 2 ether);
         delete challenges[id];
     }
@@ -107,15 +110,15 @@ contract App {
     function timeoutChallenge(bytes32 id) public {
         Challenge storage c = challenges[id];
         require(c.bn < block.number + TIMEOUT, "timeout not elapsed");
-        require(headerTimeout(c.header) < block.number, "waiting to compute header");
+        require(headerTimeout(c.header, c.data) < block.number, "waiting to compute header");
         // address loser = c.step%2 == 0 ? c.prover : c.other;
         address winner = c.step%2 == 1 ? c.prover : c.other;
         unbondDeposit(winner, 2 ether);
         delete challenges[id];
     }
 
-    function invalidHeader(bytes32 header) public returns (bool);
-    function headerTimeout(bytes32 header) public returns (uint);
+    function invalidHeader(bytes32 header, bytes32 data) public returns (bool);
+    function headerTimeout(bytes32 header, bytes32 data) public returns (uint);
 
 }
 
