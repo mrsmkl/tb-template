@@ -30,10 +30,18 @@ std::map<u256, bool> signers;
 std::map<u256, u256> nonces;
 std::map<u256, u256> block_hash;
 std::map<u256, Pending> pending;
+std::map<u256, u256> mainnet_result;
+
+u256 mainnet_query = 0;
+u256 prev_mainnet_query = 0;
 
 u256 block_number;
 
 // well there are two modes, one is for transaction files, not all commands are allowed there
+
+void exit_error(const char*str) {
+    exit(-1);
+}
 
 u256 hashFile() {
     FILE *f = openFile("state.data", "rb");
@@ -102,6 +110,13 @@ void process(FILE *f, u256 hash, bool restricted, bool &eof) {
         balances[p.to] += p.value;
         pending.erase(from);
     }
+    // Mainnet query
+    else if (control == 8) {
+        mainnet_query = get_bytes32(f);
+    }
+    else if (control == 9) {
+        prev_mainnet_query = get_bytes32(f);
+    }
     if (restricted) return;
     // Block hash
     if (control == 3) {
@@ -137,6 +152,20 @@ void process(FILE *f, u256 hash, bool restricted, bool &eof) {
     else if (control == 7) {
         u256 addr = get_bytes32(f);
         signers[addr] = false;
+    }
+    // Mainnet reply
+    else if (control == 10) {
+        u256 id = get_bytes32(f);
+        u256 mainnet_reply = get_bytes32(f);
+        if (id != prev_mainnet_query) exit_error("mainnet replied to wrong query");
+        mainnet_result[id] = mainnet_reply;
+        prev_mainnet_query = 0;
+    }
+    // Mainnet result
+    else if (control == 11) {
+        u256 id = get_bytes32(f);
+        u256 reply = get_bytes32(f);
+        mainnet_result[id] = reply;
     }
 }
 
@@ -184,7 +213,21 @@ void finalize() {
         put_bytes32(f, 6);
         put_bytes32(f, x.first);
     }
+    // output query
+    put_bytes32(f, 9);
+    // output mainnet results
+    for (auto const& x : mainnet_result) {
+        put_bytes32(f, 11);
+        put_bytes32(f, x.first);
+        put_bytes32(f, x.second);
+    }
     fclose(f);
+    if (mainnet_query != 0) {
+        f = openFile("query.data", "wb");
+        put_bytes32(f, mainnet_query);
+        fclose(f);
+    }
+    if (prev_mainnet_query != 0) exit_error("mainnet query not replied to");
 }
 
 void outputBalances() {
